@@ -9,7 +9,7 @@ test("scope-default buttons render only after the model selection is toggled off
     composer,
     /const modelToggled = !runtimePending && selectedModel\.value !== defaultModelValue\(scopeKey\(\)\)/,
   );
-  assert.match(composer, /\$\{\s*modelToggled\s*\? html`[\s\S]{0,800}?>\s*Make default\s*<\/button>/);
+  assert.match(composer, /\$\{\s*modelToggled\s*\? html`[\s\S]{0,800}?\$\{t\("Make default"\)\}\s*<\/button>/);
   assert.match(composer, /\$\{\s*modelToggled && activeRuntimeConfig\?\.scopeOverride/);
 });
 

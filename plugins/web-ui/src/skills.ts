@@ -4,6 +4,7 @@ import { api, type CoreContext } from "./core-bridge";
 import type { SkillItem } from "./composer";
 import { errMessage } from "../../chassis/src/errors";
 import { fieldSelect, icon } from "./ui";
+import { t } from "./i18n.ts";
 import { appState } from "./shell";
 import { skillActions } from "./skill-actions";
 import {
@@ -81,7 +82,7 @@ async function startEdit(s: SkillItem): Promise<void> {
   editing = null;
   editingTarget = s;
   editError = "";
-  skillsNotice = "Loading skill instructions…";
+  skillsNotice = t("Loading skill instructions…");
   drawSkills();
   queueMicrotask(() => skillsPageHost?.querySelector<HTMLElement>(".context-back")?.focus());
   try {
@@ -101,7 +102,7 @@ async function startEdit(s: SkillItem): Promise<void> {
     skillsNotice = "";
   } catch (e) {
     if (request !== editRequestSeq) return;
-    editError = errMessage(e, "Failed to load skill details.");
+    editError = errMessage(e, t("Failed to load skill details."));
     skillsNotice = "";
   }
   drawSkills();
@@ -161,45 +162,45 @@ function startCreate(): void {
 }
 
 function skillMeta(s: SkillItem): string {
-  const source = s.source === "pack" ? `Pack ${s.pack?.upstreamName ?? "source"}` : "Created here";
+  const source = s.source === "pack" ? t("Pack {name}", { name: s.pack?.upstreamName ?? "source" }) : t("Created here");
   return `${scopeLabel(s.scope)} · v${s.version ?? 1} · ${source}`;
 }
 
 function skillVariant(s: SkillItem, hasScopeVariants: boolean): TemplateResult {
   const actions = skillActions(s);
   const archived = isArchivedSkill(s);
-  let state = "Active";
-  if (archived) state = "Archived";
-  else if (hasScopeVariants) state = "Scope variant";
-  let archiveLabel = "Archive";
-  if (deleting === s.id) archiveLabel = "Working…";
-  else if (archived) archiveLabel = "Restore";
+  let state = t("Active");
+  if (archived) state = t("Archived");
+  else if (hasScopeVariants) state = t("Scope variant");
+  let archiveLabel = t("Archive");
+  if (deleting === s.id) archiveLabel = t("Working…");
+  else if (archived) archiveLabel = t("Restore");
   return html`
     <div class="skill-variant ${archived ? "archived" : ""}">
       <span class="skill-variant-icon">${icon(Box, 16)}</span>
       <div class="skill-variant-copy">
         <div class="skill-variant-description" title=${s.description}>${s.description}</div>
         <div class="skill-variant-meta">
-          ${skillMeta(s)}${s.assetCount ? ` · ${s.assetCount} asset${s.assetCount === 1 ? "" : "s"}` : ""}
+          ${skillMeta(s)}${s.assetCount ? ` · ${s.assetCount === 1 ? t("{count} asset", { count: s.assetCount }) : t("{count} assets", { count: s.assetCount })}` : ""}
         </div>
         <details class="skill-variant-details">
-          <summary>Details</summary>
+          <summary>${t("Details")}</summary>
           <p>${s.description}</p>
           <dl>
             <div>
-              <dt>Scope</dt>
+              <dt>${t("Scope")}</dt>
               <dd>${s.scopeId ?? scopeLabel(s.scope)}</dd>
             </div>
             <div>
-              <dt>Capabilities</dt>
-              <dd>${s.requiredCapabilities?.length ? s.requiredCapabilities.join(", ") : "None required"}</dd>
+              <dt>${t("Capabilities")}</dt>
+              <dd>${s.requiredCapabilities?.length ? s.requiredCapabilities.join(", ") : t("None required")}</dd>
             </div>
           </dl>
         </details>
       </div>
       <div class="skill-variant-state">
         <span class="badge ${archived ? "" : "skill-active"}">${state}</span>
-        ${actions.edit && !archived ? html`<button class="btn skill-edit-trigger" data-skill-id=${s.id ?? ""} type="button" ?disabled=${deleting === s.id} @click=${() => void startEdit(s)}>Edit</button>` : nothing}
+        ${actions.edit && !archived ? html`<button class="btn skill-edit-trigger" data-skill-id=${s.id ?? ""} type="button" ?disabled=${deleting === s.id} @click=${() => void startEdit(s)}>${t("Edit")}</button>` : nothing}
         ${
           actions.delete
             ? html`<button
@@ -224,9 +225,9 @@ function skillGroup(name: string, skills: SkillItem[]): TemplateResult {
   return html`<section class="skill-group">
     <div class="skill-group-head">
       <h2 class="skill-group-name">
-        <code>/${name}</code>${skills.length > 1 ? html`<span>${skills.length} variants</span>` : nothing}
+        <code>/${name}</code>${skills.length > 1 ? html`<span>${t("{count} variants", { count: skills.length })}</span>` : nothing}
       </h2>
-      ${hasScopeVariants ? html`<span class="skill-precedence">Narrower scope takes precedence where both apply</span>` : nothing}
+      ${hasScopeVariants ? html`<span class="skill-precedence">${t("Narrower scope takes precedence where both apply")}</span>` : nothing}
     </div>
     ${skills.map((skill) => skillVariant(skill, hasScopeVariants))}
   </section>`;
@@ -236,20 +237,20 @@ function editorPane() {
   const e = editing;
   if (!e) {
     return html`<section class="skill-form-page">
-      ${listBackLink("Back to skills", closeFocusedFlow)}
+      ${listBackLink(t("Back to skills"), closeFocusedFlow)}
       <div class="skill-form-heading">
         <div>
-          <h1 class="pane-title">Edit /${editingTarget?.name ?? "skill"}</h1>
-          <p>${editError ? "Instructions unavailable." : "Loading instructions…"}</p>
+          <h1 class="pane-title">${t("Edit /{name}", { name: editingTarget?.name ?? "skill" })}</h1>
+          <p>${editError ? t("Instructions unavailable.") : t("Loading instructions…")}</p>
         </div>
       </div>
       ${editError ? html`<div class="form-error" role="alert">${editError}</div>` : nothing}
     </section>`;
   }
   const reviewed = reviewMatches(e.review, e.description, e.body);
-  let saveLabel = "Save";
-  if (saving) saveLabel = "Saving…";
-  else if (reviewed) saveLabel = "Publish change";
+  let saveLabel = t("Save");
+  if (saving) saveLabel = t("Saving…");
+  else if (reviewed) saveLabel = t("Publish change");
   return html`
     <form
       class="skill-form-page"
@@ -258,16 +259,16 @@ function editorPane() {
         void saveEdit();
       }}
     >
-      ${listBackLink("Back to skills", closeFocusedFlow)}
+      ${listBackLink(t("Back to skills"), closeFocusedFlow)}
       <div class="skill-form-heading">
         <div>
-          <h1 class="pane-title">Edit /${e.name}</h1>
-          <p>Available to ${e.scopeId?.startsWith("personal:") ? "only you" : (e.scopeId ?? "this context")}</p>
+          <h1 class="pane-title">${t("Edit /{name}", { name: e.name })}</h1>
+          <p>${t("Available to {audience}", { audience: e.scopeId?.startsWith("personal:") ? t("only you") : (e.scopeId ?? t("this context")) })}</p>
         </div>
-        <span class="badge">Editing</span>
+        <span class="badge">${t("Editing")}</span>
       </div>
       <label class="skill-field">
-        <span>Description</span>
+        <span>${t("Description")}</span>
         <input
           id="skill-edit-description"
           class="skill-desc-input"
@@ -282,7 +283,7 @@ function editorPane() {
         />
       </label>
       <label class="skill-field">
-        <span>Instructions</span>
+        <span>${t("Instructions")}</span>
         <textarea
           class="skill-body-input"
           spellcheck="false"
@@ -299,11 +300,12 @@ function editorPane() {
       ${
         reviewed
           ? html`<div class="skill-impact" role="alert">
-              <strong>Publish this change to ${e.scopeId}?</strong>
+              <strong>${t("Publish this change to {scope}?", { scope: e.scopeId ?? "" })}</strong>
               <div class="card-meta">
-                Everyone in this context can invoke the updated instructions. Description
-                ${e.description === e.originalDescription ? "unchanged" : "changed"}; instructions
-                ${e.body === e.originalBody ? "unchanged" : "changed"}.
+                ${t("Everyone in this context can invoke the updated instructions. Description {descriptionStatus}; instructions {bodyStatus}.", {
+                  descriptionStatus: e.description === e.originalDescription ? t("unchanged") : t("changed"),
+                  bodyStatus: e.body === e.originalBody ? t("unchanged") : t("changed"),
+                })}
               </div>
             </div>`
           : nothing
@@ -330,11 +332,11 @@ function editorPane() {
                   drawSkills();
                 }}
               >
-                Review again
+                ${t("Review again")}
               </button>`
             : nothing
         }
-        <button class="btn" type="button" ?disabled=${saving} @click=${closeFocusedFlow}>Cancel</button>
+        <button class="btn" type="button" ?disabled=${saving} @click=${closeFocusedFlow}>${t("Cancel")}</button>
       </div>
     </form>
   `;
@@ -344,9 +346,9 @@ function creatorPane() {
   const c = creating!;
   const ready = c.name.trim() !== "" && c.description.trim() !== "" && c.body.trim() !== "";
   const reviewed = createReviewMatches(c.review, c.name.trim(), c.description.trim(), c.body.trim(), c.scopeId);
-  let createLabel = "Create skill";
-  if (creatingSaving) createLabel = "Saving…";
-  else if (reviewed) createLabel = "Publish skill";
+  let createLabel = t("Create skill");
+  if (creatingSaving) createLabel = t("Saving…");
+  else if (reviewed) createLabel = t("Publish skill");
   return html`
     <form
       class="skill-form-page"
@@ -355,16 +357,16 @@ function creatorPane() {
         void saveCreate();
       }}
     >
-      ${listBackLink("Back to skills", closeFocusedFlow)}
+      ${listBackLink(t("Back to skills"), closeFocusedFlow)}
       <div class="skill-form-heading">
         <div>
-          <h1 class="pane-title">New skill</h1>
-          <p>Create a reusable procedure for yourself or a shared context.</p>
+          <h1 class="pane-title">${t("New skill")}</h1>
+          <p>${t("Create a reusable procedure for yourself or a shared context.")}</p>
         </div>
-        <span class="badge">New</span>
+        <span class="badge">${t("New")}</span>
       </div>
       <label class="skill-field">
-        <span>Name</span>
+        <span>${t("Name")}</span>
         <input
           id="skill-create-name"
           class="skill-desc-input"
@@ -380,7 +382,7 @@ function creatorPane() {
         />
       </label>
       <label class="skill-field">
-        <span>Available to</span>
+        <span>${t("Available to")}</span>
         ${fieldSelect({
           className: "skill-scope-select",
           value: c.scopeId,
@@ -392,14 +394,14 @@ function creatorPane() {
           },
           options: createScopes.map((scope) => html`<option value=${scope.scopeId}>${scope.name}</option>`),
         })}
-        <small class="card-meta">Everyone in a shared context can invoke and edit this skill.</small>
+        <small class="card-meta">${t("Everyone in a shared context can invoke and edit this skill.")}</small>
       </label>
       <label class="skill-field">
-        <span>Description</span>
+        <span>${t("Description")}</span>
         <input
           class="skill-desc-input"
           type="text"
-          placeholder="One line: what it does / when to use it"
+          placeholder=${t("One line: what it does / when to use it")}
           data-focus-key="skill-create-description"
           .value=${c.description}
           ?disabled=${creatingSaving}
@@ -410,11 +412,11 @@ function creatorPane() {
         />
       </label>
       <label class="skill-field">
-        <span>Instructions</span>
+        <span>${t("Instructions")}</span>
         <textarea
           class="skill-body-input"
           spellcheck="false"
-          placeholder="The SKILL.md contents — the steps to follow when this skill is used."
+          placeholder=${t("The SKILL.md contents — the steps to follow when this skill is used.")}
           data-focus-key="skill-create-body"
           ?disabled=${creatingSaving}
           @input=${(ev: Event) => {
@@ -428,8 +430,8 @@ function creatorPane() {
       ${
         reviewed
           ? html`<div class="skill-impact" role="alert">
-              <strong>Publish /${c.name.trim()} to ${c.scopeId}?</strong>
-              <div class="card-meta">Everyone in this context can invoke and edit these instructions.</div>
+              <strong>${t("Publish /{name} to {scope}?", { name: c.name.trim(), scope: c.scopeId })}</strong>
+              <div class="card-meta">${t("Everyone in this context can invoke and edit these instructions.")}</div>
             </div>`
           : nothing
       }
@@ -455,11 +457,11 @@ function creatorPane() {
                   drawSkills();
                 }}
               >
-                Review again
+                ${t("Review again")}
               </button>`
             : nothing
         }
-        <button class="btn" type="button" ?disabled=${creatingSaving} @click=${closeFocusedFlow}>Cancel</button>
+        <button class="btn" type="button" ?disabled=${creatingSaving} @click=${closeFocusedFlow}>${t("Cancel")}</button>
       </div>
     </form>
   `;
@@ -489,35 +491,35 @@ function drawSkills(loading = false): void {
     drawSkills();
   };
   const emptyState = skillEmptyState(skillRows.length, filtered.length, loading);
-  let empty: string | TemplateResult = "No skills available yet.";
+  let empty: string | TemplateResult = t("No skills available yet.");
   if (emptyState === "filtered") {
     empty = html`<div class="skill-empty">
-      <span>No skills match these filters.</span
-      ><button class="btn" type="button" @click=${clearFilters}>Clear filters</button>
+      <span>${t("No skills match these filters.")}</span
+      ><button class="btn" type="button" @click=${clearFilters}>${t("Clear filters")}</button>
     </div>`;
   } else if (emptyState === "loading") {
-    empty = "Loading skills…";
+    empty = t("Loading skills…");
   }
   render(
     html`${listPageTpl({
-      title: "Skills",
+      title: t("Skills"),
       onRefresh: () => void renderSkills(),
-      action: { label: "New skill", onClick: startCreate },
+      action: { label: t("New skill"), onClick: startCreate },
       search: {
         value: skillSearch,
-        placeholder: "Search skills…",
+        placeholder: t("Search skills…"),
         onInput: (value) => {
           skillSearch = value;
           drawSkills();
         },
       },
       filters: html`<div class="skill-registry-controls">
-          <div class="resource-tabs" role="group" aria-label="Filter by skill status">
+          <div class="resource-tabs" role="group" aria-label=${t("Filter by skill status")}>
             ${(
               [
-                ["active", "Active", counts.active],
-                ["archived", "Archived", counts.archived],
-                ["all", "All", counts.all],
+                ["active", t("Active"), counts.active],
+                ["archived", t("Archived"), counts.archived],
+                ["all", t("All"), counts.all],
               ] as const
             ).map(
               ([value, label, count]) =>
@@ -536,45 +538,50 @@ function drawSkills(loading = false): void {
           </div>
           <div class="skill-filter-fields">
             <label class="list-select"
-              ><span>Scope</span>${fieldSelect({
+              ><span>${t("Scope")}</span>${fieldSelect({
                 compact: true,
-                ariaLabel: "Filter skills by scope",
+                ariaLabel: t("Filter skills by scope"),
                 value: scopeFilter,
                 onChange: (value) => {
                   scopeFilter = value;
                   drawSkills();
                 },
                 options: [
-                  html`<option value="all">All scopes</option>`,
-                  html`<option value="personal">Personal</option>`,
-                  html`<option value="channel">Channel</option>`,
-                  html`<option value="group">Project / group</option>`,
-                  html`<option value="team">Team</option>`,
-                  html`<option value="org">Organization</option>`,
+                  html`<option value="all">${t("All scopes")}</option>`,
+                  html`<option value="personal">${t("Personal")}</option>`,
+                  html`<option value="channel">${t("Channel")}</option>`,
+                  html`<option value="group">${t("Project / group")}</option>`,
+                  html`<option value="team">${t("Team")}</option>`,
+                  html`<option value="org">${t("Organization")}</option>`,
                 ],
               })}</label
             >
             <label class="list-select"
-              ><span>Source</span>${fieldSelect({
+              ><span>${t("Source")}</span>${fieldSelect({
                 compact: true,
-                ariaLabel: "Filter skills by source",
+                ariaLabel: t("Filter skills by source"),
                 value: sourceFilter,
                 onChange: (value) => {
                   sourceFilter = value;
                   drawSkills();
                 },
                 options: [
-                  html`<option value="all">All sources</option>`,
-                  html`<option value="native">Created here</option>`,
-                  html`<option value="pack">Skill packs</option>`,
-                  html`<option value="overrides">Overrides</option>`,
+                  html`<option value="all">${t("All sources")}</option>`,
+                  html`<option value="native">${t("Created here")}</option>`,
+                  html`<option value="pack">${t("Skill packs")}</option>`,
+                  html`<option value="overrides">${t("Overrides")}</option>`,
                 ],
               })}</label
             >
           </div>
         </div>
         <div class="skill-result-count" aria-live="polite">
-          ${loading ? "Loading…" : `${filtered.length} skill${filtered.length === 1 ? "" : "s"} in ${groups.length} ${groups.length === 1 ? "group" : "groups"}`}
+          ${loading
+            ? t("Loading…")
+            : t("{skills} in {groups}", {
+                skills: filtered.length === 1 ? t("{count} skill", { count: filtered.length }) : t("{count} skills", { count: filtered.length }),
+                groups: groups.length === 1 ? t("{count} group", { count: groups.length }) : t("{count} groups", { count: groups.length }),
+              })}
         </div>
         ${skillsNotice ? html`<div class="status">${skillsNotice}</div>` : nothing}`,
       rows,
@@ -609,7 +616,7 @@ function closeArchiveDialog(): void {
 }
 
 function archiveDialog(skill: SkillItem): TemplateResult {
-  const audience = skill.scope === "personal" ? "you" : `everyone in ${skill.scopeId ?? `this ${skill.scope}`}`;
+  const audience = skill.scope === "personal" ? t("you") : t("everyone in {scope}", { scope: skill.scopeId ?? `this ${skill.scope}` });
   return html`<div
     class="project-dialog-backdrop"
     @click=${(event: MouseEvent) => event.target === event.currentTarget && closeArchiveDialog()}
@@ -623,11 +630,10 @@ function archiveDialog(skill: SkillItem): TemplateResult {
       @keydown=${(event: KeyboardEvent) => trapDialogFocus(event, closeArchiveDialog)}
     >
       <div class="project-dialog-head">
-        <div><h2 id="skill-archive-title">Archive /${skill.name}?</h2></div>
+        <div><h2 id="skill-archive-title">${t("Archive /{name}?", { name: skill.name })}</h2></div>
       </div>
       <p id="skill-archive-impact">
-        This version will stop being available to ${audience}. If it overrides a broader /${skill.name}, that version
-        becomes effective. Its history and assets are kept, and you can restore it later.
+        ${t("This version will stop being available to {audience}. If it overrides a broader /{name}, that version becomes effective. Its history and assets are kept, and you can restore it later.", { audience, name: skill.name })}
       </p>
       <div class="project-dialog-actions actions">
         <button
@@ -637,14 +643,14 @@ function archiveDialog(skill: SkillItem): TemplateResult {
           ?disabled=${deleting === skill.id}
           @click=${closeArchiveDialog}
         >
-          Cancel</button
+          ${t("Cancel")}</button
         ><button
           class="btn danger skill-archive-confirm"
           type="button"
           ?disabled=${deleting === skill.id}
           @click=${() => void performArchive(skill)}
         >
-          ${deleting === skill.id ? "Archiving…" : "Archive skill"}
+          ${deleting === skill.id ? t("Archiving…") : t("Archive skill")}
         </button>
       </div>
     </div>
@@ -680,7 +686,7 @@ async function saveEdit(): Promise<void> {
     restoreFocusedFlow(returnTarget);
   } catch (e) {
     if (!skillMutations.isCurrent(operation)) return;
-    editError = errMessage(e, "Failed to save skill.");
+    editError = errMessage(e, t("Failed to save skill."));
     saving = false;
     drawSkills();
   }
@@ -692,7 +698,7 @@ async function saveCreate(): Promise<void> {
   const description = creating.description.trim();
   const body = creating.body.trim();
   if (!name || !description || !body) {
-    createError = "Name, description, and instructions are all required.";
+    createError = t("Name, description, and instructions are all required.");
     drawSkills();
     return;
   }
@@ -725,7 +731,7 @@ async function saveCreate(): Promise<void> {
     restoreFocusedFlow(returnTarget);
   } catch (e) {
     if (!skillMutations.isCurrent(operation)) return;
-    createError = errMessage(e, "Failed to create skill.");
+    createError = errMessage(e, t("Failed to create skill."));
     creatingSaving = false;
     drawSkills();
   }
@@ -741,7 +747,7 @@ async function deleteSkill(s: SkillItem, trigger?: HTMLElement): Promise<void> {
       return void renderSkills();
     } catch (e) {
       deleting = null;
-      skillsNotice = errMessage(e, "Failed to restore skill.");
+      skillsNotice = errMessage(e, t("Failed to restore skill."));
       return drawSkills();
     }
   }
@@ -776,7 +782,7 @@ async function performArchive(s: SkillItem): Promise<void> {
     await renderSkills();
   } catch (e) {
     deleting = null;
-    skillsNotice = errMessage(e, "Failed to archive skill.");
+    skillsNotice = errMessage(e, t("Failed to archive skill."));
     drawSkills();
     requestAnimationFrame(() => {
       const fallback = focusTarget?.dataset.skillId
@@ -813,7 +819,7 @@ export async function renderSkills(): Promise<void> {
     skillRows = (r.skills ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
     const personal = appState.me ? `personal:${appState.me.user}` : "";
     createScopes = [
-      { scopeId: personal, name: "Personal — only you" },
+      { scopeId: personal, name: t("Personal — only you") },
       ...(contexts.contexts ?? [])
         .filter(
           (context) =>
@@ -825,7 +831,7 @@ export async function renderSkills(): Promise<void> {
   } catch (e) {
     if (!skillsRefreshes.isCurrent(request) || seq !== appState.viewRenderSeq || appState.currentView !== "skills")
       return;
-    skillsNotice = errMessage(e, "Failed to load skills.");
+    skillsNotice = errMessage(e, t("Failed to load skills."));
   }
   if (skillsRefreshes.isCurrent(request)) drawSkills(false);
 }

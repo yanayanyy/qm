@@ -1,6 +1,6 @@
 import "dockview-core/dist/styles/dockview.css";
 import "./shell.css";
-import { bootSafely } from "./shell";
+import { bootSafely, closeLangMenu } from "./shell";
 import { closeFormMenus } from "./ui";
 import { allConversations } from "./conversations";
 import { closeOpenSessionMenu, renderList, sessionsState } from "./sessions";
@@ -27,6 +27,7 @@ document.addEventListener("click", (e) => {
     renderList();
   }
   closeDeployMenu(target);
+  closeLangMenu(target);
 });
 
 document.addEventListener("keydown", (e) => {
@@ -35,6 +36,7 @@ document.addEventListener("keydown", (e) => {
   closeOpenSessionMenu();
   closeDeployMenu(null, true);
   closeFormMenus();
+  closeLangMenu(null);
 });
 
 void bootSafely();
