@@ -469,7 +469,7 @@ function sidebarFooterTpl(): TemplateResult {
           `
         : nothing}
     </div>
-    <theme-toggle .includeSystem=${true} title="Color scheme: light / dark / system"></theme-toggle>
+    <theme-toggle .includeSystem=${true} title=${t("Color scheme: light / dark / system")}></theme-toggle>
     <button class="icon-btn subtle" title=${t("Sign out")} aria-label=${t("Sign out")} @click=${signOut}>
       ${icon(LogOut, 17)}
     </button>

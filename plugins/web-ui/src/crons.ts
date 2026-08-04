@@ -578,7 +578,7 @@ function cronRunHistory(c: CronView): TemplateResult {
           </span>
           ${
             run.sessionId
-              ? html`<a class="cron-run-link" href=${deepLinkPath(UI_BASE, "chats", run.sessionId)}>Worklog</a>`
+              ? html`<a class="cron-run-link" href=${deepLinkPath(UI_BASE, "chats", run.sessionId)}>${t("Worklog")}</a>`
               : nothing
           }
         </div>`;

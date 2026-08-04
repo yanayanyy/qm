@@ -259,11 +259,12 @@ function addCredentialCard(): TemplateResult {
   return html`<section class="kc-add-card" aria-labelledby="kc-add-title">
     <div class="kc-panel-head">
       <div>
-        <span class="kc-eyebrow">New credential</span>
+        <span class="kc-eyebrow">${t("New credential")}</span>
         <h2 id="kc-add-title">${t("Add a credential")}</h2>
         <p>
-          Describe the credential here, then paste the secret itself on a private one-time page. It goes straight to
-          your encrypted keychain — it is never shown in chat or stored on this page.
+          ${t(
+            "Describe the credential here, then paste the secret itself on a private one-time page. It goes straight to your encrypted keychain — it is never shown in chat or stored on this page.",
+          )}
         </p>
       </div>
       <div class="kc-panel-icon">${icon(LockKeyhole, 20)}</div>
@@ -272,11 +273,12 @@ function addCredentialCard(): TemplateResult {
       secureDropUrl
         ? html`
             <div class="kc-success" role="status">
-              <strong>Your one-time page is ready</strong><span>Open it in a new tab and paste the secret there.</span>
+              <strong>${t("Your one-time page is ready")}</strong
+              ><span>${t("Open it in a new tab and paste the secret there.")}</span>
             </div>
             <div class="kc-form-actions">
               <a class="btn primary" href=${secureDropUrl} target="_blank" rel="noopener noreferrer"
-                >Open the one-time page</a
+                >${t("Open the one-time page")}</a
               ><button
                 class="btn"
                 type="button"
@@ -347,7 +349,7 @@ function addCredentialCard(): TemplateResult {
                 ?disabled=${keychainOperations.dropInFlight}
                 @click=${() => void createDrop()}
               >
-                ${keychainOperations.dropInFlight ? "Preparing…" : t("Continue")}
+                ${keychainOperations.dropInFlight ? t("Preparing…") : t("Continue")}
               </button>
             </div>
           `
@@ -559,7 +561,7 @@ function drawConnectors(loading = false): void {
               <h2 id="kc-credentials-title">${t("Stored credentials")}</h2>
               <span>${keychainCredentials.length}</span>
             </div>
-            <p>API keys, tokens, and files you added through the one-time page.</p>
+            <p>${t("API keys, tokens, and files you added through the one-time page.")}</p>
           </div>
           <div class="kc-resource-list">
             ${
@@ -740,12 +742,12 @@ async function createDrop(): Promise<void> {
       body: JSON.stringify(submittedDraft),
     });
     if (!keychainOperations.isCurrentEpoch(stateEpoch)) return;
-    if (!result.url) throw new Error("No one-time page URL was returned.");
+    if (!result.url) throw new Error(t("No one-time page URL was returned."));
     secureDropUrl = result.url;
-    connectorNotice = "Your one-time page is ready.";
+    connectorNotice = t("Your one-time page is ready.");
   } catch (e) {
     if (!keychainOperations.isCurrentEpoch(stateEpoch)) return;
-    connectorNotice = errMessage(e, "Could not create the one-time page.");
+    connectorNotice = errMessage(e, t("Could not create the one-time page."));
   } finally {
     if (keychainOperations.isCurrentEpoch(stateEpoch)) {
       keychainOperations.finishDrop(stateEpoch);

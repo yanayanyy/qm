@@ -665,7 +665,7 @@ export function createComposerSurface(ctx: ConvCtx): ComposerSurface {
     }
     const canSteer = Boolean(composerState.draft.trim());
     const steerTitle = composerState.attachments.length
-      ? "Steer the running task (attachments stay for your next message)"
+      ? t("Steer the running task (attachments stay for your next message)")
       : t("Steer the running task");
     return html`
       <button class="stop-btn" type="button" title=${t("Stop")} aria-label=${t("Stop")} @click=${() => stopStreaming(agent)}>
@@ -1173,7 +1173,7 @@ export function createComposerSurface(ctx: ConvCtx): ComposerSurface {
     // Don't clobber anything typed while the message was held: put the held text
     // back in front of the newer draft instead of overwriting it.
     composerState.draft = composerState.draft.trim() ? `${text}\n\n${composerState.draft}` : text;
-    composerState.error = "Could not deliver the message — the running task never settled. It is back in the composer.";
+    composerState.error = t("Could not deliver the message — the running task never settled. It is back in the composer.");
     ctx.chat.drawActiveChat(agent);
   }
 
@@ -1214,8 +1214,9 @@ export function createComposerSurface(ctx: ConvCtx): ComposerSurface {
     if (agent.state.isStreaming) {
       if (attempt < 20) window.setTimeout(() => resendWhenIdle(agent, text, attempt + 1), 250);
       else {
-        composerState.error =
-          "Could not deliver the message — the running task ended mid-send. It is back in the composer.";
+        composerState.error = t(
+          "Could not deliver the message — the running task ended mid-send. It is back in the composer.",
+        );
         ctx.chat.drawActiveChat(agent);
       }
       return;

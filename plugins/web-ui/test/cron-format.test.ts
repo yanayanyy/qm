@@ -74,7 +74,7 @@ test("calendar schedule honors a core-provided next fire timestamp", () => {
 });
 
 function zonedTime(ms: number, timeZone?: string): string {
-  return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", ...(timeZone ? { timeZone } : {}) });
+  return new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", ...(timeZone ? { timeZone } : {}) });
 }
 
 test("same instant renders as today's time in one timezone and tomorrow's in another", () => {
@@ -138,7 +138,7 @@ function legacyFormatCronDateTime(ms: number, now: number, timeZone?: string): s
         parts.year === todayParts.year
           ? { month: "short", day: "numeric", timeZone }
           : { month: "short", day: "numeric", year: "numeric", timeZone };
-      return `${date.toLocaleDateString([], dateOpts)} ${time}`;
+      return `${date.toLocaleDateString("en-US", dateOpts)} ${time}`;
     }
   }
   const tomorrow = new Date(today);
@@ -160,7 +160,7 @@ function legacyFormatCronDateTime(ms: number, now: number, timeZone?: string): s
     date.getFullYear() === today.getFullYear()
       ? { month: "short", day: "numeric" }
       : { month: "short", day: "numeric", year: "numeric" };
-  return `${date.toLocaleDateString([], dateOpts)} ${time}`;
+  return `${date.toLocaleDateString("en-US", dateOpts)} ${time}`;
 }
 
 interface LegacyParts {

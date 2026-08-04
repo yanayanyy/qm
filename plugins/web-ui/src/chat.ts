@@ -1893,7 +1893,7 @@ export function createChatSurface(ctx: ConvCtx): ChatSurface {
         ${
           activity?.truncated
             ? html`<button class="show-full-btn" type="button" @click=${() => void loadFullEntry(work, activity)}>
-                Show full output
+                ${t("Show full output")}
               </button>`
             : nothing
         }
@@ -1915,7 +1915,7 @@ export function createChatSurface(ctx: ConvCtx): ChatSurface {
         a === activity ? { ...a, payload: full.payload, truncated: false } : a,
       );
     } catch (err) {
-      ctx.composer.state.error = errMessage(err, "Couldn't load the full output.");
+      ctx.composer.state.error = errMessage(err, t("Couldn't load the full output."));
     }
     redrawTranscript();
   }
