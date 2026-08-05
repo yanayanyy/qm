@@ -10,6 +10,7 @@ import { createInsecureTestServer } from "../src/api/server.ts";
 import { buildApp, type BuiltApp } from "../src/wiring.ts";
 import { testConfig } from "./support/test-config.ts";
 import { createModelCredentialStore, type StoredModelCredential } from "../src/model/model-credential-store.ts";
+import { setProviderBaseUrls, setProviderWireModels } from "../src/model/pi-models.ts";
 import { createMemoryMap } from "../src/persistence/durable-map.ts";
 
 const ADMIN = { "content-type": "application/json", "x-admin-actor": "admin-alice@default-org" };
@@ -443,6 +444,84 @@ test("a stored scope override outside the configured picker refuses web turns; t
     const inherited = await turn("web:alice:inherited");
     assert.equal(inherited.status, "queued");
   } finally {
+    await srv.close();
+  }
+});
+
+const GATEWAY = "https://gateway.example.com";
+
+function gatewayFetch(modelsStatus: number, messagesStatus: number, calls: string[]): typeof fetch {
+  return async (input, init) => {
+    const url = String(input);
+    calls.push(`${init?.method ?? "GET"} ${url}`);
+    if (url === `${GATEWAY}/v1/models`) return new Response(null, { status: modelsStatus });
+    if (url === `${GATEWAY}/v1/messages`) return new Response(null, { status: messagesStatus });
+    return new Response(null, { status: 200 });
+  };
+}
+
+const gatewayConfig = {
+  anthropicApiKey: "deployment-anthropic-key",
+  providerBaseUrls: { anthropic: GATEWAY },
+} as Parameters<typeof testConfig>[0];
+
+test("admin key save probes a gateway that has no /v1/models when a wire model is configured", async () => {
+  const calls: string[] = [];
+  const srv = start(
+    { ...gatewayConfig, providerWireModels: { anthropic: { slots: { opus: "glm-5.2" } } } },
+    gatewayFetch(404, 200, calls),
+  );
+  try {
+    const response = await fetch(`${srv.base}/v1/admin/model-providers/anthropic`, {
+      method: "PUT",
+      headers: ADMIN,
+      body: JSON.stringify({ apiKey: "gateway-key" }),
+    });
+    assert.equal(response.status, 200);
+    assert.ok(calls.includes(`POST ${GATEWAY}/v1/messages`), "fell back to a completion probe");
+  } finally {
+    setProviderBaseUrls({});
+    setProviderWireModels({});
+    await srv.close();
+  }
+});
+
+test("admin key save reports an unprovable gateway instead of blaming the key", async () => {
+  const srv = start(gatewayConfig, gatewayFetch(404, 200, []));
+  try {
+    const response = await fetch(`${srv.base}/v1/admin/model-providers/anthropic`, {
+      method: "PUT",
+      headers: ADMIN,
+      body: JSON.stringify({ apiKey: "gateway-key" }),
+    });
+    assert.equal(response.status, 400);
+    const body = (await response.json()) as { error: string; message: string };
+    assert.equal(body.error, "gateway_not_provable");
+    assert.match(body.message, /no wire model is configured/);
+  } finally {
+    setProviderBaseUrls({});
+    setProviderWireModels({});
+    await srv.close();
+  }
+});
+
+test("admin key save rejects a key the gateway probe refuses", async () => {
+  const srv = start(
+    { ...gatewayConfig, providerWireModels: { anthropic: { fallback: "glm-5.2" } } },
+    gatewayFetch(404, 401, []),
+  );
+  try {
+    const response = await fetch(`${srv.base}/v1/admin/model-providers/anthropic`, {
+      method: "PUT",
+      headers: ADMIN,
+      body: JSON.stringify({ apiKey: "bad-key" }),
+    });
+    assert.equal(response.status, 400);
+    const body = (await response.json()) as { error: string };
+    assert.equal(body.error, "invalid_api_key");
+  } finally {
+    setProviderBaseUrls({});
+    setProviderWireModels({});
     await srv.close();
   }
 });

@@ -25,7 +25,7 @@ import { NonRetryableTurnError } from "../src/core/turn-error.ts";
 import type { ScopeId, Session, SessionEntry } from "../src/types.ts";
 import { createMemoryTaskStore } from "../src/tasks/memory-task-store.ts";
 import { CodexAppServer } from "../src/harness/codex-app-server.ts";
-import { DEFAULT_CODEX_MODEL_ID } from "../src/model/pi-models.ts";
+import { DEFAULT_CODEX_MODEL_ID, setProviderWireModels, wireModelId } from "../src/model/pi-models.ts";
 
 const replaySmokeItems = [
   { type: "message", role: "user", content: [{ type: "input_text", text: "earlier question" }] },
@@ -695,3 +695,68 @@ test(
     assert.deepEqual(requests, []);
   },
 );
+
+function modelCapturingCodexBinary(dir: string, captureFile: string): string {
+  const path = join(dir, "capturing-codex");
+  writeFileSync(
+    path,
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const readline = require("node:readline");
+const rl = readline.createInterface({ input: process.stdin });
+const send = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+rl.on("line", (line) => {
+  const msg = JSON.parse(line);
+  if (msg.method === "initialize") return send({ id: msg.id, result: {} });
+  if (msg.method === "initialized") return;
+  if (msg.method === "thread/start") {
+    fs.appendFileSync(${JSON.stringify(captureFile)}, "thread/start=" + (msg.params.model ?? "") + "\\n");
+    return send({ id: msg.id, result: { thread: { id: "thread-cap" } } });
+  }
+  if (msg.method === "turn/start") {
+    fs.appendFileSync(${JSON.stringify(captureFile)}, "turn/start=" + (msg.params.model ?? "") + "\\n");
+    send({ id: msg.id, result: { turn: { id: "turn-cap", status: "inProgress", items: [] } } });
+    send({ method: "item/completed", params: { threadId: "thread-cap", turnId: "turn-cap", item: { type: "agentMessage", id: "i", text: "ok", phase: "final_answer", memoryCitation: null } } });
+    return send({ method: "turn/completed", params: { threadId: "thread-cap", turn: { id: "turn-cap", status: "completed", items: [], itemsView: "notLoaded" } } });
+  }
+});
+`,
+  );
+  chmodSync(path, 0o755);
+  return path;
+}
+
+test("Codex sends the wire model name on both thread/start and turn/start", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-codex-wire-"));
+  const captureFile = join(dir, "models.txt");
+  const tasks = createMemoryTaskStore();
+  const harness = createCodexHarness({
+    binaryPath: modelCapturingCodexBinary(dir, captureFile),
+    env: process.env,
+    tasks,
+  });
+  t.after(async () => {
+    setProviderWireModels({});
+    await harness.turns.close?.();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  setProviderWireModels({ openai: { fallback: "gateway-model-x" } });
+  const scope = { kind: "org", id: "test" } as unknown as ScopeId;
+  const session = { id: "session-wire" } as Session;
+  const result = await harness.turns.runTurn({
+    session,
+    input: "hi",
+    systemPrompt: "be concise",
+    history: [],
+    tools: {} as HarnessTurnInput["tools"],
+    scopeLabel: scope,
+    orgScopeId: scope,
+    emit: async (entry) => ({ ...entry, sessionId: session.id, seq: 1, createdAt: Date.now() }) as SessionEntry,
+    recordModelCall: () => {},
+  });
+  assert.equal(result.reply, "ok");
+  const wire = wireModelId(DEFAULT_CODEX_MODEL_ID);
+  assert.equal(wire, "gateway-model-x");
+  const captured = readFileSync(captureFile, "utf8").trim().split("\n");
+  assert.deepEqual(captured, [`thread/start=${wire}`, `turn/start=${wire}`]);
+});

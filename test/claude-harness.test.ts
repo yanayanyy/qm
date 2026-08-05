@@ -98,6 +98,25 @@ test("Claude child environment excludes core credentials and user homes", () => 
   );
 });
 
+test("Claude child environment forwards gateway base url and wire-slot model env", () => {
+  const env = claudeChildEnv(
+    {
+      PATH: "/bin",
+      ANTHROPIC_BASE_URL: "https://gateway.example.com",
+      ANTHROPIC_MODEL: "glm-5.2",
+      ANTHROPIC_DEFAULT_FABLE_MODEL: "glm-5.2",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "glm-5.2",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "glm-5.2",
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "glm-4.5-air",
+    },
+    "/tmp/claude-jail",
+  );
+  assert.equal(env.ANTHROPIC_BASE_URL, "https://gateway.example.com");
+  assert.equal(env.ANTHROPIC_MODEL, "glm-5.2");
+  assert.equal(env.ANTHROPIC_DEFAULT_OPUS_MODEL, "glm-5.2");
+  assert.equal(env.ANTHROPIC_DEFAULT_HAIKU_MODEL, "glm-4.5-air");
+});
+
 test("Claude drops only a root parent process to the unprivileged nobody identity", () => {
   assert.deepEqual(claudeProcessIdentity(0), { uid: 65534, gid: 65534 });
   assert.equal(claudeProcessIdentity(1000), undefined);

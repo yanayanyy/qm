@@ -238,6 +238,8 @@ import {
   auxiliaryModelForProvider,
   defaultModelForHarness,
   modelProviderAvailabilityFor,
+  setProviderBaseUrls,
+  setProviderWireModels,
   type HarnessId,
 } from "./model/pi-models.ts";
 import { createAdminService, bootAdminGrantSeed, type AdminService } from "./admin/admin-service.ts";
@@ -370,6 +372,8 @@ export function buildApp(
     modelCredentialFetch?: typeof fetch;
   } = {},
 ): BuiltApp {
+  setProviderBaseUrls(config.providerBaseUrls);
+  setProviderWireModels(config.providerWireModels);
   if (config.databaseUrl && !config.connectorSecretKey) {
     throw new Error("CONNECTOR_SECRET_KEY is required with durable storage");
   }

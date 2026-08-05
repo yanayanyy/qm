@@ -13,6 +13,10 @@ import {
   MODEL_PROVIDERS,
   SELECTABLE_BASE_MODELS,
   contextTokenBudgetForModel,
+  setProviderBaseUrls,
+  setProviderWireModels,
+  wireModelId,
+  configuredWireModel,
 } from "../src/model/pi-models.ts";
 
 test("every selectable base model resolves against the pi-ai registry", () => {
@@ -173,5 +177,71 @@ test("context token budget is half of each model's real input room", () => {
   for (const m of SELECTABLE_BASE_MODELS) {
     const budget = contextTokenBudgetForModel(m.id);
     assert.ok(budget !== undefined && budget >= 60_000, `${m.id} budget ${budget} suspiciously small`);
+  }
+});
+
+test("a configured provider base url replaces the vendor endpoint, including for cloned models", () => {
+  try {
+    assert.equal(getRequiredModel("claude-opus-4-8").baseUrl, "https://api.anthropic.com");
+    assert.equal(getRequiredModel("claude-opus-5").baseUrl, "https://api.anthropic.com");
+    setProviderBaseUrls({ anthropic: "https://gateway.example.com" });
+    assert.equal(getRequiredModel("claude-opus-4-8").baseUrl, "https://gateway.example.com", "direct builtin follows");
+    assert.equal(
+      getRequiredModel("claude-opus-5").baseUrl,
+      "https://gateway.example.com",
+      "clone follows its template",
+    );
+    assert.equal(getRequiredModel("claude-opus-5").id, "claude-opus-5", "base url alone does not touch the id");
+    assert.ok(getRequiredModel("gpt-5.6-sol").baseUrl?.startsWith("https://api.openai.com"), "openai untouched");
+  } finally {
+    setProviderBaseUrls({});
+  }
+  assert.equal(getRequiredModel("claude-opus-5").baseUrl, "https://api.anthropic.com", "clearing restores the vendor");
+});
+
+test("wire model slots rewrite the wire id by slot, with a fallback, without touching window or budget", () => {
+  try {
+    setProviderWireModels({
+      anthropic: { slots: { opus: "glm-5.2", haiku: "glm-4.5-air" }, fallback: "glm-5.2" },
+    });
+    assert.equal(getRequiredModel("claude-opus-5").id, "glm-5.2", "opus slot applies to the clone");
+    assert.equal(getRequiredModel("claude-opus-4-8").id, "glm-5.2", "opus slot applies to the builtin");
+    assert.equal(getRequiredModel("claude-haiku-4-5").id, "glm-4.5-air", "haiku slot applies");
+    assert.equal(getRequiredModel("claude-sonnet-5").id, "glm-5.2", "unslotted model falls back");
+    assert.equal(getRequiredModel("claude-opus-5").contextWindow, 1_000_000, "window is preserved");
+    assert.equal(
+      contextTokenBudgetForModel("claude-opus-5"),
+      Math.floor((1_000_000 - 128_000) * 0.5),
+      "budget is preserved",
+    );
+    assert.ok(getRequiredModel("gpt-5.6-sol").id.startsWith("gpt-"), "other providers untouched");
+  } finally {
+    setProviderWireModels({});
+  }
+  assert.equal(getRequiredModel("claude-opus-5").id, "claude-opus-5", "clearing restores the registry id");
+});
+
+test("wireModelId returns the wire name for known models and passes unknown ids through", () => {
+  try {
+    setProviderWireModels({ anthropic: { slots: { opus: "qwen3.8-max" } } });
+    assert.equal(wireModelId("claude-opus-5"), "qwen3.8-max");
+    assert.equal(wireModelId("claude-haiku-4-5"), "claude-haiku-4-5", "no haiku slot means no rewrite");
+    assert.equal(wireModelId("not-a-real-model"), "not-a-real-model");
+    assert.equal(wireModelId(undefined), undefined);
+  } finally {
+    setProviderWireModels({});
+  }
+});
+
+test("configuredWireModel prefers a configured slot over the fallback and nothing when unset", () => {
+  try {
+    assert.equal(configuredWireModel("anthropic"), undefined);
+    setProviderWireModels({ anthropic: { fallback: "fallback-model" } });
+    assert.equal(configuredWireModel("anthropic"), "fallback-model");
+    setProviderWireModels({ anthropic: { slots: { haiku: "haiku-model" }, fallback: "fallback-model" } });
+    assert.equal(configuredWireModel("anthropic"), "haiku-model", "any configured slot wins over the fallback");
+    assert.equal(configuredWireModel("openai"), undefined, "other providers are independent");
+  } finally {
+    setProviderWireModels({});
   }
 });

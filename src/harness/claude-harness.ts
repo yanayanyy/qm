@@ -22,6 +22,7 @@ import {
   DEFAULT_AGENT_MODEL_ID,
   modelSupportedByHarness,
   modelSupportsFastMode,
+  wireModelId,
 } from "../model/pi-models.ts";
 import { startSignalPoll, type RunSignalStore } from "../runs/run-signal-store.ts";
 import type { TaskStatus, TaskStore } from "../tasks/task-store.ts";
@@ -115,6 +116,11 @@ const CLAUDE_ENV_PASSTHROUGH = [
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_AUTH_TOKEN",
   "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_MODEL",
+  "ANTHROPIC_DEFAULT_FABLE_MODEL",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
   "CLAUDE_CODE_OAUTH_TOKEN",
 ] as const;
 
@@ -469,7 +475,7 @@ export function createClaudeHarness(opts: ClaudeHarnessOptions = {}): Harness {
           ? { spawnClaudeCodeProcess: (options: SpawnOptions) => spawnClaudeProcess(options, processIdentity) }
           : {}),
         systemPrompt: turn.systemPrompt,
-        model,
+        model: wireModelId(model),
         ...(opts.binaryPath ? { pathToClaudeCodeExecutable: opts.binaryPath } : {}),
         ...(effort(turn.thinkingLevel) ? { effort: effort(turn.thinkingLevel) } : {}),
         ...(turn.fastMode && modelSupportsFastMode(model)

@@ -20,6 +20,39 @@ export function isHarnessId(value: unknown): value is HarnessId {
   return typeof value === "string" && (HARNESS_IDS as readonly string[]).includes(value);
 }
 
+export const MODEL_SLOTS = ["fable", "opus", "sonnet", "haiku"] as const;
+export type ModelSlot = (typeof MODEL_SLOTS)[number];
+
+export interface ProviderWireModels {
+  slots?: Partial<Record<ModelSlot, string>>;
+  fallback?: string;
+}
+
+let configuredBaseUrls: Partial<Record<ModelProvider, string>> = {};
+let configuredWireModels: Partial<Record<ModelProvider, ProviderWireModels>> = {};
+
+export function setProviderBaseUrls(urls: Partial<Record<ModelProvider, string>>): void {
+  configuredBaseUrls = { ...urls };
+}
+
+export function setProviderWireModels(models: Partial<Record<ModelProvider, ProviderWireModels>>): void {
+  configuredWireModels = { ...models };
+}
+
+export function providerBaseUrl(provider: ModelProvider): string | undefined {
+  return configuredBaseUrls[provider];
+}
+
+export function configuredWireModel(provider: ModelProvider): string | undefined {
+  const wire = configuredWireModels[provider];
+  if (!wire) return undefined;
+  for (const slot of MODEL_SLOTS) {
+    const configured = wire.slots?.[slot];
+    if (configured) return configured;
+  }
+  return wire.fallback;
+}
+
 type PiModel = Model<Api>;
 
 interface ModelEntry {
@@ -29,6 +62,7 @@ interface ModelEntry {
   webui: boolean;
   base: boolean;
   auxiliary?: boolean;
+  slot?: ModelSlot;
   clone?: {
     template: string;
     input: number;
@@ -42,13 +76,14 @@ interface ModelEntry {
 const GPT_56_CLONE = { template: "gpt-5.5", contextWindow: 1_050_000, maxTokens: 128_000 } as const;
 
 export const MODEL_REGISTRY: readonly ModelEntry[] = [
-  { id: "claude-fable-5", name: "Claude Fable 5", fastMode: false, webui: true, base: true },
+  { id: "claude-fable-5", name: "Claude Fable 5", fastMode: false, webui: true, base: true, slot: "fable" },
   {
     id: "claude-opus-5",
     name: "Claude Opus 5",
     fastMode: true,
     webui: true,
     base: true,
+    slot: "opus",
     clone: {
       template: "claude-opus-4-8",
       input: 5,
@@ -58,9 +93,17 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
       maxTokens: 128_000,
     },
   },
-  { id: "claude-opus-4-8", name: "Claude Opus 4.8", fastMode: true, webui: true, base: true },
-  { id: "claude-sonnet-5", name: "Claude Sonnet 5", fastMode: false, webui: true, base: true },
-  { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", fastMode: false, webui: true, base: true, auxiliary: true },
+  { id: "claude-opus-4-8", name: "Claude Opus 4.8", fastMode: true, webui: true, base: true, slot: "opus" },
+  { id: "claude-sonnet-5", name: "Claude Sonnet 5", fastMode: false, webui: true, base: true, slot: "sonnet" },
+  {
+    id: "claude-haiku-4-5",
+    name: "Claude Haiku 4.5",
+    fastMode: false,
+    webui: true,
+    base: true,
+    auxiliary: true,
+    slot: "haiku",
+  },
   {
     id: "gpt-5.6-sol",
     name: "GPT-5.6 Sol",
@@ -87,8 +130,8 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = [
     clone: { ...GPT_56_CLONE, input: 1, output: 6 },
   },
   { id: "openrouter/auto", name: "OpenRouter Auto", fastMode: false, webui: true, base: true },
-  { id: "claude-opus-4-7", name: "Claude Opus 4.7", fastMode: true, webui: false, base: false },
-  { id: "claude-opus-4-6", name: "Claude Opus 4.6", fastMode: true, webui: false, base: false },
+  { id: "claude-opus-4-7", name: "Claude Opus 4.7", fastMode: true, webui: false, base: false, slot: "opus" },
+  { id: "claude-opus-4-6", name: "Claude Opus 4.6", fastMode: true, webui: false, base: false, slot: "opus" },
 ];
 
 const REGISTRY_BY_ID = new Map(MODEL_REGISTRY.map((m) => [m.id, m]));
@@ -125,24 +168,42 @@ function cloneModel(model: PiModel, id: string, name: string, overrides: Partial
   };
 }
 
+function applyGatewayOverrides(model: PiModel, entry: ModelEntry | undefined): PiModel {
+  const provider = model.provider as ModelProvider;
+  const baseUrl = configuredBaseUrls[provider];
+  const wire = configuredWireModels[provider];
+  const wireId = wire ? ((entry?.slot ? wire.slots?.[entry.slot] : undefined) ?? wire.fallback) : undefined;
+  if (!baseUrl && !wireId) return model;
+  return { ...model, ...(baseUrl && baseUrl !== model.baseUrl ? { baseUrl } : {}), ...(wireId ? { id: wireId } : {}) };
+}
+
 export function resolveModel(id: string): PiModel | undefined {
   const entry = REGISTRY_BY_ID.get(id);
   if (entry?.clone) {
     const template = builtinModel(entry.clone.template);
     return template
-      ? cloneModel(template, id, entry.name, {
-          contextWindow: entry.clone.contextWindow,
-          maxTokens: entry.clone.maxTokens,
-          cost: {
-            input: entry.clone.input,
-            output: entry.clone.output,
-            cacheRead: entry.clone.input / 10,
-            cacheWrite: entry.clone.cacheWrite ?? 0,
-          },
-        })
+      ? applyGatewayOverrides(
+          cloneModel(template, id, entry.name, {
+            contextWindow: entry.clone.contextWindow,
+            maxTokens: entry.clone.maxTokens,
+            cost: {
+              input: entry.clone.input,
+              output: entry.clone.output,
+              cacheRead: entry.clone.input / 10,
+              cacheWrite: entry.clone.cacheWrite ?? 0,
+            },
+          }),
+          entry,
+        )
       : undefined;
   }
-  return builtinModel(id);
+  const model = builtinModel(id);
+  return model ? applyGatewayOverrides(model, entry) : model;
+}
+
+export function wireModelId(id: string | undefined): string | undefined {
+  if (!id) return id;
+  return resolveModel(id)?.id ?? id;
 }
 
 export function auxiliaryModelForProvider(provider: string): string | undefined {

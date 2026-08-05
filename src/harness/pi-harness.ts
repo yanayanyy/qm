@@ -47,6 +47,7 @@ import {
   getRequiredModel,
   modelSupportsFastMode,
   contextTokenBudgetForModel,
+  wireModelId,
 } from "../model/pi-models.ts";
 import {
   defineHarness,
@@ -1466,7 +1467,7 @@ export function createPiHarness(opts?: PiHarnessOptions): Harness {
           const wantFast = wantsFastMode(turn.fastMode, desiredModelId);
           const current = entry.agentSession.model as { id?: string; headers?: Record<string, string> } | undefined;
           const currentFast = Boolean(current?.headers?.["anthropic-beta"]?.includes(FAST_MODE_BETA));
-          if (current?.id !== desiredModelId || currentFast !== wantFast) {
+          if (current?.id !== wireModelId(desiredModelId) || currentFast !== wantFast) {
             try {
               const base = resolveModel(desiredModelId);
               if (base) await entry.agentSession.setModel(wantFast ? withFastModeHeaders(base) : base);
@@ -1476,7 +1477,7 @@ export function createPiHarness(opts?: PiHarnessOptions): Harness {
           }
           const activeModel = entry.agentSession.model as { id?: string; headers?: Record<string, string> } | undefined;
           entry.ref.fast = Boolean(activeModel?.headers?.["anthropic-beta"]?.includes(FAST_MODE_BETA));
-          const effectiveModel = activeModel?.id ?? desiredModelId;
+          const effectiveModel = desiredModelId;
           const defaultThinkingLevel = entry.agentSession.model
             ? defaultInteractiveThinkingLevel(entry.agentSession.model)
             : "auto";
@@ -1714,14 +1715,15 @@ export function createPiHarness(opts?: PiHarnessOptions): Harness {
           const promptStart = Date.now();
           const attemptRefusalFallback = async (refusal: string): Promise<boolean> => {
             if (userAborted || turn.cancel?.aborted) return false;
-            const fromId = (entry.agentSession.model as { id?: string } | undefined)?.id;
-            const fallbackId = fromId ? refusalFallbackModelId(fromId) : undefined;
+            const currentWire = (entry.agentSession.model as { id?: string } | undefined)?.id;
+            const fromId = REFUSAL_FALLBACK_MODEL_IDS.find((id) => wireModelId(id) === currentWire) ?? desiredModelId;
+            const fallbackId = refusalFallbackModelId(fromId);
             const fallback = fallbackId ? resolveModel(fallbackId) : undefined;
-            if (!fallbackId || !fallback) return false;
+            if (!fallbackId || !fallback || wireModelId(fallbackId) === wireModelId(fromId)) return false;
             const capMs = turnWallClockMs > 0 ? turnWallClockMs - (Date.now() - promptStart) : turnWallClockMs;
             if (turnWallClockMs > 0 && capMs < EMPTY_ENDING_MIN_BUDGET_MS) return false;
             console.error(
-              `[pi] provider refusal — retrying on fallback model ${fromId} -> ${fallbackId} session=${turn.session.id}: ${refusal}`,
+              `[pi] provider refusal — retrying on fallback model ${modelDisplayName(fromId)} -> ${modelDisplayName(fallbackId)} session=${turn.session.id}: ${refusal}`,
             );
             const wantFast = wantsFastMode(turn.fastMode, fallbackId);
             await entry.agentSession.setModel(wantFast ? withFastModeHeaders(fallback) : fallback);
@@ -1738,7 +1740,7 @@ export function createPiHarness(opts?: PiHarnessOptions): Harness {
             }
             const outcome = await raceTurnWallClock(
               entry.agentSession.prompt(
-                refusalFallbackNote(modelDisplayName(fromId!), modelDisplayName(fallbackId), refusal),
+                refusalFallbackNote(modelDisplayName(fromId), modelDisplayName(fallbackId), refusal),
               ),
               { capMs, abort: () => entry.agentSession.abort() },
             );

@@ -616,3 +616,122 @@ test("doctor without required local values warns-and-skips the live Slack check 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+function gatewayDoctorConfig(envCore: Record<string, string>): QmConfig {
+  return {
+    contract: 1,
+    orgId: "acme",
+    publicUrl: "http://localhost:8080",
+    target: "docker",
+    services: ["core"],
+    plugins: [],
+    skills: [],
+    env: { core: { HARNESS: "pi", MODEL_PROVIDER: "anthropic", ...envCore } },
+    imageOverrides: {},
+  };
+}
+
+async function captureWarnings(run: () => Promise<unknown>): Promise<{ warnings: string[]; error?: unknown }> {
+  const warnings: string[] = [];
+  const prior = console.warn;
+  console.warn = (message: unknown) => warnings.push(String(message));
+  try {
+    await run();
+    return { warnings };
+  } catch (error) {
+    return { warnings, error };
+  } finally {
+    console.warn = prior;
+  }
+}
+
+function withFetch(handler: (url: string) => Response | undefined, run: () => Promise<unknown>) {
+  const priorFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    const response = handler(url);
+    if (response) return response;
+    throw new Error(`unexpected fetch ${url}`);
+  }) as typeof fetch;
+  return Promise.resolve(run()).finally(() => {
+    globalThis.fetch = priorFetch;
+  });
+}
+
+test("doctor rejects a malformed provider base url from env.core", async () => {
+  const secrets = new Map([["ANTHROPIC_API_KEY", "anthropic-key"]]);
+  await withFetch(
+    () => new Response(null, { status: 200 }),
+    async () => {
+      const { error } = await captureWarnings(() =>
+        doctorCommon(gatewayDoctorConfig({ ANTHROPIC_BASE_URL: "not a url" }), secrets),
+      );
+      assert.match(String(error), /not a valid URL/);
+    },
+  );
+});
+
+test("doctor ignores a whitespace-only provider base url", async () => {
+  const secrets = new Map([["ANTHROPIC_API_KEY", "anthropic-key"]]);
+  await withFetch(
+    (url) => (url.startsWith("https://api.anthropic.com") ? new Response(null, { status: 200 }) : undefined),
+    async () => {
+      const { warnings, error } = await captureWarnings(() =>
+        doctorCommon(gatewayDoctorConfig({ ANTHROPIC_BASE_URL: "   " }), secrets),
+      );
+      assert.equal(error, undefined);
+      assert.ok(
+        !warnings.some((warning) => warning.includes("could not reach")),
+        "blank value must not break the probe",
+      );
+    },
+  );
+});
+
+test("doctor warns when a gateway base url is set without any wire model", async () => {
+  const secrets = new Map([["ANTHROPIC_API_KEY", "anthropic-key"]]);
+  await withFetch(
+    (url) => (url.startsWith("https://gateway.example.com") ? new Response(null, { status: 200 }) : undefined),
+    async () => {
+      const { warnings, error } = await captureWarnings(() =>
+        doctorCommon(gatewayDoctorConfig({ ANTHROPIC_BASE_URL: "https://gateway.example.com" }), secrets),
+      );
+      assert.equal(error, undefined);
+      assert.ok(
+        warnings.some((warning) => warning.includes("no wire model is configured")),
+        `warnings: ${warnings.join(" | ")}`,
+      );
+    },
+  );
+});
+
+test("doctor warns when wire models are set without a gateway base url", async () => {
+  const secrets = new Map([["ANTHROPIC_API_KEY", "anthropic-key"]]);
+  await withFetch(
+    (url) => (url.startsWith("https://api.anthropic.com") ? new Response(null, { status: 200 }) : undefined),
+    async () => {
+      const { warnings, error } = await captureWarnings(() =>
+        doctorCommon(gatewayDoctorConfig({ ANTHROPIC_DEFAULT_OPUS_MODEL: "glm-5.2" }), secrets),
+      );
+      assert.equal(error, undefined);
+      assert.ok(
+        warnings.some((warning) => warning.includes("ANTHROPIC_BASE_URL is unset")),
+        `warnings: ${warnings.join(" | ")}`,
+      );
+    },
+  );
+});
+
+test("doctor degrades to a warning when an anthropic gateway has no /v1/models and no wire model", async () => {
+  const secrets = new Map([["ANTHROPIC_API_KEY", "anthropic-key"]]);
+  await withFetch(
+    (url) => (url.startsWith("https://gateway.example.com") ? new Response(null, { status: 404 }) : undefined),
+    async () => {
+      const { warnings, error } = await captureWarnings(() =>
+        doctorCommon(gatewayDoctorConfig({ ANTHROPIC_BASE_URL: "https://gateway.example.com" }), secrets),
+      );
+      assert.equal(error, undefined);
+      assert.ok(warnings.some((warning) => warning.includes("could not verify the gateway")));
+    },
+  );
+});

@@ -9,10 +9,18 @@ type FakeSdkMessage = Record<string, unknown>;
 type Script = (prompts: AsyncIterable<{ message: { content: unknown } }>) => AsyncGenerator<FakeSdkMessage>;
 
 let currentScript: Script = async function* () {};
+let lastQueryModel: string | undefined;
 
 mock.module("@anthropic-ai/claude-agent-sdk", {
   namedExports: {
-    query: ({ prompt }: { prompt: AsyncIterable<{ message: { content: unknown } }> }) => {
+    query: ({
+      prompt,
+      options,
+    }: {
+      prompt: AsyncIterable<{ message: { content: unknown } }>;
+      options?: { model?: string };
+    }) => {
+      lastQueryModel = options?.model;
       const generator = currentScript(prompt);
       return {
         async initializationResult() {
@@ -300,4 +308,27 @@ test("the claude harness offers compaction and detection so a utility role canno
     recordModelCall: () => {},
   });
   assert.equal(verdict.respond, true);
+});
+
+test("the claude child receives the wire model name, not the registry id", async () => {
+  const { setProviderWireModels } = await import("../src/model/pi-models.ts");
+  setProviderWireModels({ anthropic: { slots: { opus: "glm-5.2" } } });
+  try {
+    currentScript = async function* () {
+      yield assistantMessage("msg_wire", "ok", {
+        input_tokens: 1,
+        output_tokens: 1,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      });
+      yield resultMessage("ok");
+    };
+    const harness = createClaudeHarness({ signals: createMemoryRunSignalStore() });
+    const { turn } = harnessTurn();
+    const result = await harness.turns.runTurn(turn);
+    assert.equal(result.reply, "ok");
+    assert.equal(lastQueryModel, "glm-5.2");
+  } finally {
+    setProviderWireModels({});
+  }
 });

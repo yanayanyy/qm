@@ -13,11 +13,14 @@ import { parseSecurityPosture, type SecurityPosture } from "./security/security-
 import { slackPluginConfigFromEnv, type SlackPluginConfig } from "./slack/config.ts";
 import {
   MODEL_PROVIDERS,
+  MODEL_SLOTS,
   defaultModelForProvider,
   isModelProvider,
   onlyProvider,
   type ModelProvider,
   type ModelProviderAvailability,
+  type ModelSlot,
+  type ProviderWireModels,
 } from "./model/pi-models.ts";
 import { isLocale, SUPPORTED_LOCALES, type Locale } from "./i18n/locale.ts";
 
@@ -51,6 +54,8 @@ export interface Config {
   anthropicApiKey?: string;
   openaiApiKey?: string;
   openrouterApiKey?: string;
+  providerBaseUrls: Partial<Record<ModelProvider, string>>;
+  providerWireModels: Partial<Record<ModelProvider, ProviderWireModels>>;
   modelProvider?: ModelProvider;
   piCaptureRequests: boolean;
   piSystemCacheSplit: boolean;
@@ -381,6 +386,70 @@ export function orgScope(): string {
   return `org:${orgId()}`;
 }
 
+const PROVIDER_ENV_PREFIX: Record<ModelProvider, string> = {
+  anthropic: "ANTHROPIC",
+  openai: "OPENAI",
+  openrouter: "OPENROUTER",
+};
+
+const PROVIDER_BASE_URL_ENV: Record<ModelProvider, string> = {
+  anthropic: "ANTHROPIC_BASE_URL",
+  openai: "OPENAI_BASE_URL",
+  openrouter: "OPENROUTER_BASE_URL",
+};
+
+const WIRE_SLOT_ENV_SUFFIX: Record<ModelSlot, string> = {
+  fable: "DEFAULT_FABLE_MODEL",
+  opus: "DEFAULT_OPUS_MODEL",
+  sonnet: "DEFAULT_SONNET_MODEL",
+  haiku: "DEFAULT_HAIKU_MODEL",
+};
+
+function providerBaseUrl(name: string, raw: string | undefined): string | undefined {
+  const configured = raw?.trim().replace(/\/+$/, "");
+  if (!configured) return undefined;
+  let url: URL;
+  try {
+    url = new URL(configured);
+  } catch {
+    throw new Error(`${name} is not a valid URL: ${configured}`);
+  }
+  if (url.username || url.password) {
+    throw new Error(`${name} must not embed credentials in the URL; supply the key via the provider API key env`);
+  }
+  const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
+    throw new Error(`${name} must be an https URL (http is only allowed for loopback testing): ${configured}`);
+  }
+  return configured;
+}
+
+function providerBaseUrlsFromEnv(env: NodeJS.ProcessEnv): Partial<Record<ModelProvider, string>> {
+  const urls: Partial<Record<ModelProvider, string>> = {};
+  for (const provider of MODEL_PROVIDERS) {
+    const configured = providerBaseUrl(PROVIDER_BASE_URL_ENV[provider], env[PROVIDER_BASE_URL_ENV[provider]]);
+    if (configured) urls[provider] = configured;
+  }
+  return urls;
+}
+
+function providerWireModelsFromEnv(env: NodeJS.ProcessEnv): Partial<Record<ModelProvider, ProviderWireModels>> {
+  const wireModels: Partial<Record<ModelProvider, ProviderWireModels>> = {};
+  for (const provider of MODEL_PROVIDERS) {
+    const prefix = PROVIDER_ENV_PREFIX[provider];
+    const slots: Partial<Record<ModelSlot, string>> = {};
+    for (const slot of MODEL_SLOTS) {
+      const configured = env[`${prefix}_${WIRE_SLOT_ENV_SUFFIX[slot]}`]?.trim();
+      if (configured) slots[slot] = configured;
+    }
+    const fallback = env[`${prefix}_MODEL`]?.trim();
+    const hasSlots = Object.keys(slots).length > 0;
+    if (!hasSlots && !fallback) continue;
+    wireModels[provider] = { ...(hasSlots ? { slots } : {}), ...(fallback ? { fallback } : {}) };
+  }
+  return wireModels;
+}
+
 export const OPENCODE_RUNTIME_VERSION = "1.17.18";
 
 export const CONFIG_DEFAULTS = {
@@ -683,6 +752,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       "ANTHROPIC_API_KEY",
       "ANTHROPIC_AUTH_TOKEN",
       "ANTHROPIC_BASE_URL",
+      "ANTHROPIC_MODEL",
+      "ANTHROPIC_DEFAULT_FABLE_MODEL",
+      "ANTHROPIC_DEFAULT_OPUS_MODEL",
+      "ANTHROPIC_DEFAULT_SONNET_MODEL",
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL",
       "CLAUDE_CODE_OAUTH_TOKEN",
     ].flatMap((name) => (env[name] === undefined ? [] : [[name, env[name]]])),
   ) as NodeJS.ProcessEnv;
@@ -739,6 +813,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ...(env.ANTHROPIC_API_KEY ? { anthropicApiKey: env.ANTHROPIC_API_KEY } : {}),
     ...(env.OPENAI_API_KEY ? { openaiApiKey: env.OPENAI_API_KEY } : {}),
     ...(env.OPENROUTER_API_KEY ? { openrouterApiKey: env.OPENROUTER_API_KEY } : {}),
+    providerBaseUrls: providerBaseUrlsFromEnv(env),
+    providerWireModels: providerWireModelsFromEnv(env),
     ...(modelProvider ? { modelProvider } : {}),
     ...(env.ADMIN_GRANTS ? { adminGrants: env.ADMIN_GRANTS } : {}),
     piCaptureRequests: boolEnvStrict("PI_CAPTURE_REQUESTS", env.PI_CAPTURE_REQUESTS) ?? true,

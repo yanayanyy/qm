@@ -409,3 +409,46 @@ test("baseModelProviders constrains the base model only when a provider is decla
     "with no declaration the shipped default stands, so upgrading never moves a deployment's model or its billing",
   );
 });
+
+test("provider base urls are read from env and normalized", () => {
+  assert.deepEqual(loadConfig({}).providerBaseUrls, {});
+  assert.deepEqual(
+    loadConfig({
+      ANTHROPIC_BASE_URL: "https://gateway.example.com/",
+      OPENAI_BASE_URL: "  https://oai.example.com/v1//  ",
+    }).providerBaseUrls,
+    { anthropic: "https://gateway.example.com", openai: "https://oai.example.com/v1" },
+  );
+  assert.deepEqual(loadConfig({ OPENROUTER_BASE_URL: "   " }).providerBaseUrls, {});
+});
+
+test("provider wire models are read from env per slot with a fallback", () => {
+  assert.deepEqual(loadConfig({}).providerWireModels, {});
+  assert.deepEqual(
+    loadConfig({
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "glm-5.2",
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: " glm-4.5-air ",
+      ANTHROPIC_MODEL: "glm-5.2",
+    }).providerWireModels,
+    { anthropic: { slots: { opus: "glm-5.2", haiku: "glm-4.5-air" }, fallback: "glm-5.2" } },
+  );
+  assert.deepEqual(loadConfig({ ANTHROPIC_DEFAULT_SONNET_MODEL: "   " }).providerWireModels, {});
+  assert.deepEqual(loadConfig({ OPENAI_MODEL: "gpt-custom" }).providerWireModels, {
+    openai: { fallback: "gpt-custom" },
+  });
+});
+
+test("provider base urls reject invalid, insecure, and credential-embedded values", () => {
+  assert.throws(() => loadConfig({ ANTHROPIC_BASE_URL: "not a url" }), /not a valid URL/);
+  assert.throws(() => loadConfig({ ANTHROPIC_BASE_URL: "http://gateway.example.com" }), /must be an https URL/);
+  assert.throws(
+    () => loadConfig({ ANTHROPIC_BASE_URL: "https://user:pass@gateway.example.com" }),
+    /must not embed credentials/,
+  );
+  assert.deepEqual(loadConfig({ ANTHROPIC_BASE_URL: "http://localhost:8080" }).providerBaseUrls, {
+    anthropic: "http://localhost:8080",
+  });
+  assert.deepEqual(loadConfig({ ANTHROPIC_BASE_URL: "http://127.0.0.1:9000/" }).providerBaseUrls, {
+    anthropic: "http://127.0.0.1:9000",
+  });
+});
