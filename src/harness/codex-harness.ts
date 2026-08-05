@@ -796,7 +796,11 @@ export function createCodexHarness(opts: CodexHarnessOptions = {}): Harness {
     let timer: NodeJS.Timeout | undefined;
     try {
       const response = await rt.server
-        .request<{ turn: CodexTurn }>("turn/start", { threadId, input, ...(model ? { model } : {}) })
+        .request<{ turn: CodexTurn }>("turn/start", {
+          threadId,
+          input,
+          ...(model ? { model: wireModelId(model) } : {}),
+        })
         .catch((error: unknown) => {
           throw error instanceof CodexRpcError ? codexProviderFailure(error.message) : error;
         });

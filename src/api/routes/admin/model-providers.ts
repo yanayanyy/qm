@@ -1,10 +1,4 @@
-import {
-  DEFAULT_AGENT_MODEL_ID,
-  isModelProvider,
-  providerBaseUrl,
-  wireModelId,
-  type ModelProvider,
-} from "../../../model/pi-models.ts";
+import { configuredWireModel, isModelProvider, providerBaseUrl, type ModelProvider } from "../../../model/pi-models.ts";
 import { selectableModelCatalog } from "../../../model/model-catalog.ts";
 import { sendJson } from "../../http.ts";
 import type { ApiCtx } from "../route.ts";
@@ -41,7 +35,12 @@ async function actor(ctx: ApiCtx) {
   return authorizeAdmin(ctx, scope);
 }
 
-async function anthropicGatewayProbe(fetchImpl: typeof fetch, apiKey: string, baseUrl: string): Promise<boolean> {
+async function anthropicGatewayProbe(
+  fetchImpl: typeof fetch,
+  apiKey: string,
+  baseUrl: string,
+  wireModel: string,
+): Promise<boolean> {
   try {
     const response = await fetchImpl(`${baseUrl}/v1/messages`, {
       method: "POST",
@@ -50,7 +49,7 @@ async function anthropicGatewayProbe(fetchImpl: typeof fetch, apiKey: string, ba
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: wireModelId(DEFAULT_AGENT_MODEL_ID),
+        model: wireModel,
         max_tokens: 1,
         messages: [{ role: "user", content: "ping" }],
       }),
@@ -62,21 +61,26 @@ async function anthropicGatewayProbe(fetchImpl: typeof fetch, apiKey: string, ba
   }
 }
 
-async function validate(ctx: ApiCtx, provider: ModelProvider, apiKey: string): Promise<boolean> {
+type ValidationOutcome = "ok" | "rejected" | "unprovable";
+
+async function validate(ctx: ApiCtx, provider: ModelProvider, apiKey: string): Promise<ValidationOutcome> {
   const fetchImpl = ctx.deps.modelCredentialFetch ?? fetch;
   try {
     const response = await fetchImpl(validationUrl(provider), {
       headers: VALIDATION_REQUESTS[provider].headers(apiKey),
       signal: AbortSignal.timeout(5_000),
     });
-    if (response.ok) return true;
+    if (response.ok) return "ok";
     const gateway = providerBaseUrl(provider);
-    if ((response.status === 404 || response.status === 405) && gateway && provider === "anthropic") {
-      return anthropicGatewayProbe(fetchImpl, apiKey, gateway);
+    if ((response.status === 404 || response.status === 405) && gateway) {
+      if (provider !== "anthropic") return "unprovable";
+      const wireModel = configuredWireModel("anthropic");
+      if (!wireModel) return "unprovable";
+      return (await anthropicGatewayProbe(fetchImpl, apiKey, gateway, wireModel)) ? "ok" : "rejected";
     }
-    return false;
+    return "rejected";
   } catch {
-    return false;
+    return "rejected";
   }
 }
 
@@ -106,7 +110,15 @@ export async function putModelProvider(ctx: ApiCtx): Promise<void> {
   if (typeof apiKey !== "string" || !apiKey.trim()) {
     return sendJson(ctx.res, 400, { error: "bad_request", message: "API key is required" });
   }
-  if (!(await validate(ctx, provider, apiKey.trim()))) {
+  const outcome = await validate(ctx, provider, apiKey.trim());
+  if (outcome === "unprovable") {
+    const message =
+      provider === "anthropic"
+        ? `the ${provider} gateway has no model listing and no wire model is configured (ANTHROPIC_MODEL or ANTHROPIC_DEFAULT_*_MODEL), so this key cannot be validated`
+        : `the ${provider} gateway has no model listing endpoint, so this key cannot be validated`;
+    return sendJson(ctx.res, 400, { error: "gateway_not_provable", message });
+  }
+  if (outcome === "rejected") {
     return sendJson(ctx.res, 400, { error: "invalid_api_key", message: `${provider} rejected this API key` });
   }
   await ctx.deps.modelCredentials.set(provider, apiKey.trim(), authorized.id);

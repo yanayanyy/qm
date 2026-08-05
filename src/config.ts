@@ -403,10 +403,29 @@ const WIRE_SLOT_ENV_SUFFIX: Record<ModelSlot, string> = {
   haiku: "DEFAULT_HAIKU_MODEL",
 };
 
+function providerBaseUrl(name: string, raw: string | undefined): string | undefined {
+  const configured = raw?.trim().replace(/\/+$/, "");
+  if (!configured) return undefined;
+  let url: URL;
+  try {
+    url = new URL(configured);
+  } catch {
+    throw new Error(`${name} is not a valid URL: ${configured}`);
+  }
+  if (url.username || url.password) {
+    throw new Error(`${name} must not embed credentials in the URL; supply the key via the provider API key env`);
+  }
+  const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
+    throw new Error(`${name} must be an https URL (http is only allowed for loopback testing): ${configured}`);
+  }
+  return configured;
+}
+
 function providerBaseUrlsFromEnv(env: NodeJS.ProcessEnv): Partial<Record<ModelProvider, string>> {
   const urls: Partial<Record<ModelProvider, string>> = {};
   for (const provider of MODEL_PROVIDERS) {
-    const configured = env[PROVIDER_BASE_URL_ENV[provider]]?.trim().replace(/\/+$/, "");
+    const configured = providerBaseUrl(PROVIDER_BASE_URL_ENV[provider], env[PROVIDER_BASE_URL_ENV[provider]]);
     if (configured) urls[provider] = configured;
   }
   return urls;
@@ -722,6 +741,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       "ANTHROPIC_API_KEY",
       "ANTHROPIC_AUTH_TOKEN",
       "ANTHROPIC_BASE_URL",
+      "ANTHROPIC_MODEL",
+      "ANTHROPIC_DEFAULT_FABLE_MODEL",
+      "ANTHROPIC_DEFAULT_OPUS_MODEL",
+      "ANTHROPIC_DEFAULT_SONNET_MODEL",
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL",
       "CLAUDE_CODE_OAUTH_TOKEN",
     ].flatMap((name) => (env[name] === undefined ? [] : [[name, env[name]]])),
   ) as NodeJS.ProcessEnv;

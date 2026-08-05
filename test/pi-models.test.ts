@@ -16,6 +16,7 @@ import {
   setProviderBaseUrls,
   setProviderWireModels,
   wireModelId,
+  configuredWireModel,
 } from "../src/model/pi-models.ts";
 
 test("every selectable base model resolves against the pi-ai registry", () => {
@@ -227,6 +228,19 @@ test("wireModelId returns the wire name for known models and passes unknown ids 
     assert.equal(wireModelId("claude-haiku-4-5"), "claude-haiku-4-5", "no haiku slot means no rewrite");
     assert.equal(wireModelId("not-a-real-model"), "not-a-real-model");
     assert.equal(wireModelId(undefined), undefined);
+  } finally {
+    setProviderWireModels({});
+  }
+});
+
+test("configuredWireModel prefers a configured slot over the fallback and nothing when unset", () => {
+  try {
+    assert.equal(configuredWireModel("anthropic"), undefined);
+    setProviderWireModels({ anthropic: { fallback: "fallback-model" } });
+    assert.equal(configuredWireModel("anthropic"), "fallback-model");
+    setProviderWireModels({ anthropic: { slots: { haiku: "haiku-model" }, fallback: "fallback-model" } });
+    assert.equal(configuredWireModel("anthropic"), "haiku-model", "any configured slot wins over the fallback");
+    assert.equal(configuredWireModel("openai"), undefined, "other providers are independent");
   } finally {
     setProviderWireModels({});
   }

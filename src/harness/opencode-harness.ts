@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk";
 import { CONFIG_DEFAULTS, type Config } from "../config.ts";
-import { DEFAULT_AGENT_MODEL_ID, resolveModel } from "../model/pi-models.ts";
+import { DEFAULT_AGENT_MODEL_ID, providerBaseUrl, resolveModel, wireModelId } from "../model/pi-models.ts";
 import { startSignalPoll, type RunSignalStore } from "../runs/run-signal-store.ts";
 import type { LlmCallUsage } from "../sessions/session-store.ts";
 import type { ScopeId, SessionEntry } from "../types.ts";
@@ -160,7 +160,10 @@ function modelRef(id: string): { providerID: string; modelID: string } {
   const slash = id.indexOf("/");
   if (slash > 0) return { providerID: id.slice(0, slash), modelID: id.slice(slash + 1) };
   const resolved = resolveModel(id);
-  return { providerID: String(resolved?.provider ?? (id.startsWith("gpt-") ? "openai" : "anthropic")), modelID: id };
+  return {
+    providerID: String(resolved?.provider ?? (id.startsWith("gpt-") ? "openai" : "anthropic")),
+    modelID: wireModelId(id) ?? id,
+  };
 }
 
 function stripDataUrls(message: unknown): unknown {
@@ -638,8 +641,18 @@ export function createOpenCodeHarness(opts: OpenCodeHarnessOptions = {}): Harnes
           instructions: [],
           enabled_providers: ["anthropic", "openai"],
           provider: {
-            anthropic: { options: { apiKey: opts.apiKey ?? "" } },
-            openai: { options: { apiKey: opts.openaiApiKey ?? "" } },
+            anthropic: {
+              options: {
+                apiKey: opts.apiKey ?? "",
+                ...(providerBaseUrl("anthropic") ? { baseURL: providerBaseUrl("anthropic") } : {}),
+              },
+            },
+            openai: {
+              options: {
+                apiKey: opts.openaiApiKey ?? "",
+                ...(providerBaseUrl("openai") ? { baseURL: providerBaseUrl("openai") } : {}),
+              },
+            },
           },
           tools: {
             ...enabledTools,

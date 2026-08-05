@@ -437,3 +437,18 @@ test("provider wire models are read from env per slot with a fallback", () => {
     openai: { fallback: "gpt-custom" },
   });
 });
+
+test("provider base urls reject invalid, insecure, and credential-embedded values", () => {
+  assert.throws(() => loadConfig({ ANTHROPIC_BASE_URL: "not a url" }), /not a valid URL/);
+  assert.throws(() => loadConfig({ ANTHROPIC_BASE_URL: "http://gateway.example.com" }), /must be an https URL/);
+  assert.throws(
+    () => loadConfig({ ANTHROPIC_BASE_URL: "https://user:pass@gateway.example.com" }),
+    /must not embed credentials/,
+  );
+  assert.deepEqual(loadConfig({ ANTHROPIC_BASE_URL: "http://localhost:8080" }).providerBaseUrls, {
+    anthropic: "http://localhost:8080",
+  });
+  assert.deepEqual(loadConfig({ ANTHROPIC_BASE_URL: "http://127.0.0.1:9000/" }).providerBaseUrls, {
+    anthropic: "http://127.0.0.1:9000",
+  });
+});

@@ -210,6 +210,8 @@ async function baseModelCheck(config: QmConfig, secrets: Map<string, string>): P
     step("base model: no modelProvider set — an administrator supplies the key from the Admin page");
     return;
   }
+  const gatewayWarning = gatewayConfigWarning(provider, config.env.core ?? {});
+  if (gatewayWarning) warn(gatewayWarning);
   const name = MODEL_PROVIDER_KEYS[provider];
   const key = deploymentSecretValue(name, secrets.get(name));
   if (!key) {
@@ -246,8 +248,36 @@ const BASE_URL_ENV: Readonly<Record<ModelProvider, string>> = {
   openrouter: "OPENROUTER_BASE_URL",
 };
 
+const PROVIDER_ENV_PREFIX: Readonly<Record<ModelProvider, string>> = {
+  anthropic: "ANTHROPIC",
+  openai: "OPENAI",
+  openrouter: "OPENROUTER",
+};
+
+const WIRE_SLOT_SUFFIXES = ["DEFAULT_FABLE_MODEL", "DEFAULT_OPUS_MODEL", "DEFAULT_SONNET_MODEL", "DEFAULT_HAIKU_MODEL"];
+
+function configuredWireModel(envCore: Record<string, string>, provider: ModelProvider): string | undefined {
+  const prefix = PROVIDER_ENV_PREFIX[provider];
+  for (const suffix of WIRE_SLOT_SUFFIXES) {
+    const configured = envCore[`${prefix}_${suffix}`]?.trim();
+    if (configured) return configured;
+  }
+  return envCore[`${prefix}_MODEL`]?.trim() || undefined;
+}
+
 function gatewayProbeModel(envCore: Record<string, string>): string | undefined {
-  return envCore.ANTHROPIC_MODEL?.trim() || envCore.ANTHROPIC_DEFAULT_OPUS_MODEL?.trim() || undefined;
+  return configuredWireModel(envCore, "anthropic");
+}
+
+function gatewayConfigWarning(provider: ModelProvider, envCore: Record<string, string>): string | undefined {
+  const prefix = PROVIDER_ENV_PREFIX[provider];
+  const baseUrl = envCore[`${prefix}_BASE_URL`]?.trim();
+  const wire = configuredWireModel(envCore, provider);
+  if (baseUrl && !wire)
+    return `${prefix}_BASE_URL is set but no wire model is configured (${prefix}_MODEL / ${prefix}_DEFAULT_*_MODEL) — turns would send catalog model names to the gateway and fail`;
+  if (!baseUrl && wire)
+    return `wire model names are configured but ${prefix}_BASE_URL is unset — gateway model names would be sent to the vendor API and fail`;
+  return undefined;
 }
 
 async function modelProviderCheck(
@@ -256,7 +286,14 @@ async function modelProviderCheck(
   envCore: Record<string, string>,
 ): Promise<void> {
   const probe = MODEL_PROVIDER_PROBES[provider];
-  const baseUrl = envCore[BASE_URL_ENV[provider]]?.trim().replace(/\/+$/, "");
+  const baseUrl = envCore[BASE_URL_ENV[provider]]?.trim().replace(/\/+$/, "") || undefined;
+  if (baseUrl) {
+    try {
+      new URL(baseUrl);
+    } catch {
+      throw new CliError(`${BASE_URL_ENV[provider]} is not a valid URL: ${baseUrl}`);
+    }
+  }
   const url = `${baseUrl ?? probe.baseUrl}${probe.path}`;
   let res: Response;
   try {
@@ -294,6 +331,10 @@ async function modelProviderCheck(
       throw new CliError(`${provider} gateway rejected ${MODEL_PROVIDER_KEYS[provider]}`);
     if (!probeRes.ok)
       throw new CliError(`the ${provider} gateway returned HTTP ${probeRes.status} for a probe completion`);
+    return;
+  }
+  if ((res.status === 404 || res.status === 405) && baseUrl) {
+    warn(`${baseUrl} has no models listing for ${provider} — could not verify the gateway`);
     return;
   }
   if (!res.ok) throw new CliError(`the ${provider} API returned HTTP ${res.status}; retry when it recovers`);

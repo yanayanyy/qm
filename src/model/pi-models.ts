@@ -43,6 +43,16 @@ export function providerBaseUrl(provider: ModelProvider): string | undefined {
   return configuredBaseUrls[provider];
 }
 
+export function configuredWireModel(provider: ModelProvider): string | undefined {
+  const wire = configuredWireModels[provider];
+  if (!wire) return undefined;
+  for (const slot of MODEL_SLOTS) {
+    const configured = wire.slots?.[slot];
+    if (configured) return configured;
+  }
+  return wire.fallback;
+}
+
 type PiModel = Model<Api>;
 
 interface ModelEntry {
