@@ -22,6 +22,7 @@ import {
   DEFAULT_AGENT_MODEL_ID,
   modelSupportedByHarness,
   modelSupportsFastMode,
+  wireModelId,
 } from "../model/pi-models.ts";
 import { startSignalPoll, type RunSignalStore } from "../runs/run-signal-store.ts";
 import type { TaskStatus, TaskStore } from "../tasks/task-store.ts";
@@ -469,7 +470,7 @@ export function createClaudeHarness(opts: ClaudeHarnessOptions = {}): Harness {
           ? { spawnClaudeCodeProcess: (options: SpawnOptions) => spawnClaudeProcess(options, processIdentity) }
           : {}),
         systemPrompt: turn.systemPrompt,
-        model,
+        model: wireModelId(model),
         ...(opts.binaryPath ? { pathToClaudeCodeExecutable: opts.binaryPath } : {}),
         ...(effort(turn.thinkingLevel) ? { effort: effort(turn.thinkingLevel) } : {}),
         ...(turn.fastMode && modelSupportsFastMode(model)

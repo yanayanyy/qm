@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { CONFIG_DEFAULTS, type Config } from "../config.ts";
 import { NonRetryableTurnError } from "../core/turn-error.ts";
-import { DEFAULT_CODEX_MODEL_ID, modelSupportedByHarness } from "../model/pi-models.ts";
+import { DEFAULT_CODEX_MODEL_ID, modelSupportedByHarness, wireModelId } from "../model/pi-models.ts";
 import { startSignalPoll, type RunSignalStore } from "../runs/run-signal-store.ts";
 import type { TaskStatus, TaskStore } from "../tasks/task-store.ts";
 import type { LlmCallUsage } from "../sessions/session-store.ts";
@@ -599,7 +599,7 @@ export function createCodexHarness(opts: CodexHarnessOptions = {}): Harness {
     }));
     const model = modelSupportedByHarness(turn.model, "codex") ? turn.model! : resolveModelId(turn.scopeLabel);
     const threadStartRequest = {
-      ...(model ? { model } : {}),
+      ...(model ? { model: wireModelId(model) } : {}),
       cwd: rt.jail,
       approvalPolicy: "never",
       sandbox: "read-only",

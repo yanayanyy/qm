@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   MODEL_PROVIDER_KEYS,
+  isModelProvider,
   mockHarnessWarning,
   validatePortalTrust,
   type ModelProvider,
@@ -203,7 +204,8 @@ export async function doctorCommon(
 async function baseModelCheck(config: QmConfig, secrets: Map<string, string>): Promise<void> {
   const mockHarness = mockHarnessWarning(config);
   if (mockHarness) warn(mockHarness);
-  const provider = config.modelProvider;
+  const override = config.env.core?.MODEL_PROVIDER?.trim();
+  const provider = isModelProvider(override) ? override : config.modelProvider;
   if (!provider) {
     step("base model: no modelProvider set — an administrator supplies the key from the Admin page");
     return;
@@ -214,26 +216,51 @@ async function baseModelCheck(config: QmConfig, secrets: Map<string, string>): P
     warn(`${name} is not available locally — skipping the live ${provider} check`);
     return;
   }
-  await modelProviderCheck(provider, key);
+  await modelProviderCheck(provider, key, config.env.core ?? {});
   step(`base model provider ${provider}: ${name} accepted`);
 }
 
 const MODEL_PROVIDER_PROBES: Readonly<
-  Record<ModelProvider, { url: string; headers: (key: string) => Record<string, string> }>
+  Record<ModelProvider, { baseUrl: string; path: string; headers: (key: string) => Record<string, string> }>
 > = {
   anthropic: {
-    url: "https://api.anthropic.com/v1/models?limit=1",
+    baseUrl: "https://api.anthropic.com",
+    path: "/v1/models?limit=1",
     headers: (key) => ({ "x-api-key": key, "anthropic-version": "2023-06-01" }),
   },
-  openai: { url: "https://api.openai.com/v1/models", headers: (key) => ({ authorization: `Bearer ${key}` }) },
-  openrouter: { url: "https://openrouter.ai/api/v1/key", headers: (key) => ({ authorization: `Bearer ${key}` }) },
+  openai: {
+    baseUrl: "https://api.openai.com/v1",
+    path: "/models",
+    headers: (key) => ({ authorization: `Bearer ${key}` }),
+  },
+  openrouter: {
+    baseUrl: "https://openrouter.ai/api/v1",
+    path: "/key",
+    headers: (key) => ({ authorization: `Bearer ${key}` }),
+  },
 };
 
-async function modelProviderCheck(provider: ModelProvider, apiKey: string): Promise<void> {
+const BASE_URL_ENV: Readonly<Record<ModelProvider, string>> = {
+  anthropic: "ANTHROPIC_BASE_URL",
+  openai: "OPENAI_BASE_URL",
+  openrouter: "OPENROUTER_BASE_URL",
+};
+
+function gatewayProbeModel(envCore: Record<string, string>): string | undefined {
+  return envCore.ANTHROPIC_MODEL?.trim() || envCore.ANTHROPIC_DEFAULT_OPUS_MODEL?.trim() || undefined;
+}
+
+async function modelProviderCheck(
+  provider: ModelProvider,
+  apiKey: string,
+  envCore: Record<string, string>,
+): Promise<void> {
   const probe = MODEL_PROVIDER_PROBES[provider];
+  const baseUrl = envCore[BASE_URL_ENV[provider]]?.trim().replace(/\/+$/, "");
+  const url = `${baseUrl ?? probe.baseUrl}${probe.path}`;
   let res: Response;
   try {
-    res = await fetch(probe.url, { headers: probe.headers(apiKey), signal: AbortSignal.timeout(10_000) });
+    res = await fetch(url, { headers: probe.headers(apiKey), signal: AbortSignal.timeout(10_000) });
   } catch (e) {
     throw new CliError(
       `could not reach the ${provider} API: ${errMessage(e)} — check network access (and any proxy) and retry`,
@@ -243,6 +270,31 @@ async function modelProviderCheck(provider: ModelProvider, apiKey: string): Prom
     throw new CliError(
       `${provider} rejected ${MODEL_PROVIDER_KEYS[provider]} — the deployment would start but could not serve a single agent turn`,
     );
+  }
+  if ((res.status === 404 || res.status === 405) && baseUrl && provider === "anthropic") {
+    const model = gatewayProbeModel(envCore);
+    if (!model) {
+      warn(
+        `${baseUrl} has no /v1/models and no wire model is configured (ANTHROPIC_MODEL / ANTHROPIC_DEFAULT_OPUS_MODEL) — could not verify the gateway`,
+      );
+      return;
+    }
+    let probeRes: Response;
+    try {
+      probeRes = await fetch(`${baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { ...probe.headers(apiKey), "content-type": "application/json" },
+        body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: "user", content: "ping" }] }),
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (e) {
+      throw new CliError(`could not reach the ${provider} gateway: ${errMessage(e)}`);
+    }
+    if (probeRes.status === 401 || probeRes.status === 403)
+      throw new CliError(`${provider} gateway rejected ${MODEL_PROVIDER_KEYS[provider]}`);
+    if (!probeRes.ok)
+      throw new CliError(`the ${provider} gateway returned HTTP ${probeRes.status} for a probe completion`);
+    return;
   }
   if (!res.ok) throw new CliError(`the ${provider} API returned HTTP ${res.status}; retry when it recovers`);
 }

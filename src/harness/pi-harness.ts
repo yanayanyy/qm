@@ -47,6 +47,7 @@ import {
   getRequiredModel,
   modelSupportsFastMode,
   contextTokenBudgetForModel,
+  wireModelId,
 } from "../model/pi-models.ts";
 import {
   defineHarness,
@@ -1466,7 +1467,7 @@ export function createPiHarness(opts?: PiHarnessOptions): Harness {
           const wantFast = wantsFastMode(turn.fastMode, desiredModelId);
           const current = entry.agentSession.model as { id?: string; headers?: Record<string, string> } | undefined;
           const currentFast = Boolean(current?.headers?.["anthropic-beta"]?.includes(FAST_MODE_BETA));
-          if (current?.id !== desiredModelId || currentFast !== wantFast) {
+          if (current?.id !== wireModelId(desiredModelId) || currentFast !== wantFast) {
             try {
               const base = resolveModel(desiredModelId);
               if (base) await entry.agentSession.setModel(wantFast ? withFastModeHeaders(base) : base);
