@@ -55,14 +55,21 @@ ANTHROPIC_DEFAULT_SONNET_MODEL=glm-5.2
 ANTHROPIC_DEFAULT_HAIKU_MODEL=glm-4.5-air    # 辅助调用省配额；全用 glm-5.2 亦可
 ```
 
-**阿里云百炼 Token Plan（协议层实测通过，活体未测）**：
+**阿里云百炼 Token Plan（已活体实测 ALL PASS）**：
 
 ```bash
+HARNESS=pi
+MODEL_PROVIDER=anthropic
 ANTHROPIC_API_KEY=<Token Plan 专属 key，百炼控制台华北2地域>
 ANTHROPIC_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic
+ANTHROPIC_DEFAULT_FABLE_MODEL=qwen3.8-max
 ANTHROPIC_DEFAULT_OPUS_MODEL=qwen3.8-max
+ANTHROPIC_DEFAULT_SONNET_MODEL=qwen3.8-max
 ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3.6-flash
 ```
+
+注意：Token Plan 没有 `qwen3.7-flash` 这个模型（实测 400 Model not exist），
+haiku 槽用 `qwen3.6-flash`。
 
 注意：
 
@@ -73,17 +80,20 @@ ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3.6-flash
 - GLM Coding Plan 条款限定"官方指定工具"，qm 不在列表，自用需知悉此风险；
   百炼明确允许第三方 Anthropic 兼容工具接入。
 - 配额放大：qm 每 turn 有 judge/标题/ack 等辅助调用；智谱 GLM-5.2 高峰 3× 消耗。
+- 百炼 SSE 帧冒号后**不带空格**（`event:message_start`、`data:{...}`），智谱带空格。
+  两种都符合 SSE 规范，但个别解析器只认带空格的；若真实 qm turn 在百炼上出现流式
+  解析异常，优先排查 pi-ai 的 SSE 容错（活体探针 live-turn.ts 已因该差异修过一次）。
 
 ### 实测结论（2026-08-04/05）
 
-| 项目 | 智谱 | 百炼 |
-| --- | --- | --- |
-| 裸模型名（glm-5.2 / qwen3.8-max） | ✅ | ✅ |
-| `[1M]` 后缀名 | ❌ 400 模型不存在 | ❌ 400 |
-| x-api-key / Bearer | ✅ 均可 | ✅ 均可 |
-| thinking / cache_control / 流式 | ✅ | ✅ |
-| GET /v1/models | ✅ 有 | ❌ 404（已有降级处理） |
-| 活体 turn（qm 解析链路 + 流式） | ✅ ALL PASS | 未测 |
+| 项目                              | 智谱              | 百炼                   |
+| --------------------------------- | ----------------- | ---------------------- |
+| 裸模型名（glm-5.2 / qwen3.8-max） | ✅                | ✅                     |
+| `[1M]` 后缀名                     | ❌ 400 模型不存在 | ❌ 400                 |
+| x-api-key / Bearer                | ✅ 均可           | ✅ 均可                |
+| thinking / cache_control / 流式   | ✅                | ✅                     |
+| GET /v1/models                    | ✅ 有             | ❌ 404（已有降级处理） |
+| 活体 turn（qm 解析链路 + 流式）   | ✅ ALL PASS       | ✅ ALL PASS            |
 
 关键结论：wire 名必须用**裸名**；`[1M]` 是 Claude Code 的本地元数据（发送前剥除），
 网关不认。GLM-5.2 / qwen3.8-max 均为 1M 上下文，与 qm 目录的 opus/sonnet 条目
